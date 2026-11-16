@@ -7,7 +7,7 @@ it as a reproducible CanvasXpress widget.
 
 ## Install
 
-Once accepted into Bioconductor:
+From Bioconductor (accepted 2026-11-13; in devel until it ships with the next Bioconductor release):
 
 ```r
 if (!requireNamespace("BiocManager", quietly = TRUE))
