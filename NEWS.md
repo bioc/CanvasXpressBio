@@ -1,4 +1,4 @@
-# CanvasXpressBio 0.99.7
+# CanvasXpressBio 1.1.1
 
 * New `cxpca()` draws a principal-component scatter of the samples (PC1 vs PC2
   by default) with the percentage of variance in the axis titles, colouring and
