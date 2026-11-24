@@ -15,6 +15,8 @@ cxplot(object, ...)
   overlays = NULL,
   var_overlays = NULL,
   cluster = FALSE,
+  log = FALSE,
+  scale = c("none", "row", "column"),
   ...
 )
 }
@@ -44,6 +46,15 @@ tracks, accepting the same values as `overlays`.}
 
 \item{cluster}{Logical; when `TRUE` both samples and features are
 hierarchically clustered (adding dendrograms). Defaults to `FALSE`.}
+
+\item{log}{Logical; when `TRUE` the assay is \eqn{\log_2(x + 1)} transformed
+before plotting, a common step for count data. Applied before `n` feature
+selection and `scale`. Defaults to `FALSE`.}
+
+\item{scale}{How to standardise the matrix before plotting: `"none"` (the
+default), `"row"` (z-score each feature, the usual choice for an
+expression heatmap so genes are comparable regardless of magnitude), or
+`"column"` (z-score each sample). Applied after `log` and `n` selection.}
 }
 \value{
 A `canvasXpress` htmlwidget.

@@ -6,13 +6,15 @@
 #' such as `SingleCellExperiment` or `DESeqDataSet`) as an interactive
 #' CanvasXpress heatmap carrying its row and column annotations; [cxvolcano()]
 #' draws a volcano plot from a differential-expression table; [cxsurvival()]
-#' draws a Kaplan-Meier curve from `colData`; and [cxboxplot()] draws a paired
-#' boxplot of one feature with per-subject connections.
+#' draws a Kaplan-Meier curve from `colData`; [cxboxplot()] draws a paired
+#' boxplot of one feature with per-subject connections; [cxpca()] draws a
+#' principal-component scatter of the samples; and [cxcorrelation()] draws a
+#' sample- or feature-correlation heatmap.
 #'
 #' @name CanvasXpressBio-package
 #' @keywords internal
 #' @importFrom methods setGeneric setMethod is
-#' @importFrom stats var rnorm runif rexp rbinom t.test setNames
+#' @importFrom stats var rnorm runif rexp rbinom t.test setNames prcomp cor sd
 #' @importFrom canvasXpress canvasXpress
 #' @importClassesFrom SummarizedExperiment SummarizedExperiment
 "_PACKAGE"
@@ -43,6 +45,26 @@
 #'
 #' @export
 setGeneric("cxplot", function(object, ...) standardGeneric("cxplot"))
+
+
+# Standardise a matrix by rows or columns (z-score). base::scale works on
+# columns, so a row scaling transposes in and back out. Features (or samples)
+# with zero variance would divide by zero; those entries are set to 0 so a
+# constant row does not blank the heatmap with NaN.
+.cxScale <- function(mat, how) {
+    if (how == "none") {
+        return(mat)
+    }
+    out <- if (how == "row") {
+        t(scale(t(mat)))
+    } else {
+        scale(mat)
+    }
+    out <- matrix(out, nrow = nrow(mat), ncol = ncol(mat),
+        dimnames = dimnames(mat))
+    out[!is.finite(out)] <- 0
+    out
+}
 
 
 # Build the overlay / clustering config for cxplot. `overlays` and
@@ -88,19 +110,31 @@ setGeneric("cxplot", function(object, ...) standardGeneric("cxplot"))
 #'   tracks, accepting the same values as `overlays`.
 #' @param cluster Logical; when `TRUE` both samples and features are
 #'   hierarchically clustered (adding dendrograms). Defaults to `FALSE`.
+#' @param log Logical; when `TRUE` the assay is \eqn{\log_2(x + 1)} transformed
+#'   before plotting, a common step for count data. Applied before `n` feature
+#'   selection and `scale`. Defaults to `FALSE`.
+#' @param scale How to standardise the matrix before plotting: `"none"` (the
+#'   default), `"row"` (z-score each feature, the usual choice for an
+#'   expression heatmap so genes are comparable regardless of magnitude), or
+#'   `"column"` (z-score each sample). Applied after `log` and `n` selection.
 #'
 #' @importFrom SummarizedExperiment assay colData rowData
 #' @export
 setMethod(
     "cxplot", "SummarizedExperiment",
     function(object, assay = 1L, graphType = "Heatmap", n = NULL,
-        overlays = NULL, var_overlays = NULL, cluster = FALSE, ...) {
+        overlays = NULL, var_overlays = NULL, cluster = FALSE,
+        log = FALSE, scale = c("none", "row", "column"), ...) {
+        scale <- match.arg(scale)
         mat <- as.matrix(SummarizedExperiment::assay(object, assay))
         if (is.null(rownames(mat))) {
             rownames(mat) <- paste0("V", seq_len(nrow(mat)))
         }
         if (is.null(colnames(mat))) {
             colnames(mat) <- paste0("S", seq_len(ncol(mat)))
+        }
+        if (isTRUE(log)) {
+            mat <- log2(mat + 1)
         }
 
         var_annot <- as.data.frame(SummarizedExperiment::rowData(object))
@@ -119,6 +153,10 @@ setMethod(
             }
             mat <- mat[keep, , drop = FALSE]
         }
+
+        # Standardise (z-score) by row or column once the plotted features are
+        # chosen, so the scaling reflects exactly what is drawn.
+        mat <- .cxScale(mat, scale)
 
         use_var_annot <- nrow(var_annot) == nrow(mat) && ncol(var_annot)
         extra <- .cxOverlayArgs(overlays, var_overlays, cluster,
@@ -464,6 +502,219 @@ cxboxplot <- function(object, feature, group, segregate = NULL,
     do.call(canvasXpress::canvasXpress, c(
         list(data = mat, smpAnnot = smp_annot),
         box_args,
+        list(...)))
+}
+
+
+#' Principal-component scatter of the samples with CanvasXpress
+#'
+#' Runs a principal-component analysis on the assay of a
+#' [SummarizedExperiment::SummarizedExperiment] and draws the samples as an
+#' interactive scatter of two components, coloured and shaped by `colData`. This
+#' is the usual first look at a genomics matrix: samples that cluster together
+#' in the leading components share an overall expression profile.
+#'
+#' The analysis transposes the assay so the samples are the observations and the
+#' features are the variables, mirroring [stats::prcomp()] usage in an RNA-seq
+#' workflow. The percentage of variance each component explains is shown in the
+#' axis titles.
+#'
+#' @param object A `SummarizedExperiment`.
+#' @param assay Assay to analyse, given as a name or index. Defaults to the
+#'   first assay.
+#' @param dimensions Length-two integer vector naming the components to plot on
+#'   the x and y axes. Defaults to `c(1, 2)` (PC1 against PC2).
+#' @param color,shape Optional `colData` column names used to colour and shape
+#'   the points (for example a cohort and a time point). `NULL` leaves the
+#'   points a single colour / shape.
+#' @param ntop Optional integer; when supplied the analysis uses only the
+#'   `ntop` most variable features, the common way to focus a PCA on the genes
+#'   that separate the samples. `NULL` (the default) uses every feature.
+#' @param scale Logical passed to [stats::prcomp()]'s `scale.`; when `TRUE` the
+#'   features are scaled to unit variance before the decomposition. Defaults to
+#'   `FALSE`.
+#' @param ... Additional CanvasXpress configuration passed to
+#'   [canvasXpress::canvasXpress()].
+#'
+#' @return A `canvasXpress` htmlwidget.
+#'
+#' @examples
+#' se <- makeDemoSE()
+#' cxpca(se, color = "Cohort", shape = "Condition", ntop = 10)
+#'
+#' @importFrom SummarizedExperiment assay colData
+#' @export
+cxpca <- function(object, assay = 1L, dimensions = c(1L, 2L),
+    color = NULL, shape = NULL, ntop = NULL, scale = FALSE, ...) {
+    if (!methods::is(object, "SummarizedExperiment")) {
+        stop("'object' must be a SummarizedExperiment.", call. = FALSE)
+    }
+    if (length(dimensions) != 2L) {
+        stop("'dimensions' must name exactly two components.", call. = FALSE)
+    }
+    mat <- as.matrix(SummarizedExperiment::assay(object, assay))
+    if (is.null(colnames(mat))) {
+        colnames(mat) <- paste0("S", seq_len(ncol(mat)))
+    }
+
+    # Keep the ntop most variable features when requested.
+    if (!is.null(ntop) && is.finite(ntop) && ntop < nrow(mat)) {
+        vars_by_row <- apply(mat, 1L, stats::var)
+        keep <- order(vars_by_row, decreasing = TRUE)[seq_len(ntop)]
+        mat <- mat[keep, , drop = FALSE]
+    }
+
+    # Samples are the observations (rows of the transposed matrix); features are
+    # the variables fed to prcomp.
+    pca <- stats::prcomp(t(mat), scale. = scale)
+    variance <- pca$sdev^2
+    percent <- round(100 * variance / sum(variance), 1)
+    pcx <- dimensions[1L]
+    pcy <- dimensions[2L]
+    if (max(pcx, pcy) > ncol(pca$x)) {
+        stop("Requested component exceeds the ", ncol(pca$x),
+            " available.", call. = FALSE)
+    }
+
+    # One point per sample: samples are the chart variables (rows) and the two
+    # component scores are the axis columns (smps), as in cxvolcano().
+    labx <- paste0("PC", pcx)
+    laby <- paste0("PC", pcy)
+    scores <- data.frame(pca$x[, c(pcx, pcy)], check.names = FALSE)
+    colnames(scores) <- c(labx, laby)
+    rownames(scores) <- colnames(mat)
+    score_mat <- as.matrix(scores)
+
+    cd <- as.data.frame(SummarizedExperiment::colData(object))
+    annot_cols <- unique(c(color, shape))
+    annot_args <- list()
+    if (length(annot_cols)) {
+        if (!all(annot_cols %in% colnames(cd))) {
+            missing <- setdiff(annot_cols, colnames(cd))
+            stop("Columns ", paste(sQuote(missing), collapse = ", "),
+                " are missing from colData.", call. = FALSE)
+        }
+        var_annot <- data.frame(row.names = colnames(mat),
+            check.names = FALSE, stringsAsFactors = FALSE)
+        for (col in annot_cols) var_annot[[col]] <- as.character(cd[[col]])
+        annot_args$varAnnot <- var_annot
+        if (!is.null(color)) annot_args$colorBy <- color
+        if (!is.null(shape)) annot_args$shapeBy <- shape
+    }
+
+    do.call(canvasXpress::canvasXpress, c(
+        list(
+            data = score_mat,
+            graphType = "Scatter2D",
+            xAxis = list(labx),
+            yAxis = list(laby),
+            xAxisTitle = sprintf("%s (%.1f%%)", labx, percent[pcx]),
+            yAxisTitle = sprintf("%s (%.1f%%)", laby, percent[pcy])),
+        annot_args,
+        list(...)))
+}
+
+
+#' Sample- or feature-correlation heatmap with CanvasXpress
+#'
+#' Draws an interactive heatmap of the pairwise correlations between the samples
+#' (or between the features) of a
+#' [SummarizedExperiment::SummarizedExperiment]. A sample-correlation heatmap is
+#' a standard quality-control view: samples from the same condition should
+#' correlate more tightly with one another than with the rest.
+#'
+#' @param object A `SummarizedExperiment`.
+#' @param assay Assay to correlate, given as a name or index. Defaults to the
+#'   first assay.
+#' @param what Whether to correlate `"samples"` (the default, columns) or
+#'   `"features"` (rows). A feature-correlation matrix can be very large, so
+#'   pair `"features"` with `ntop`.
+#' @param method Correlation method passed to [stats::cor()]: `"pearson"` (the
+#'   default), `"spearman"` or `"kendall"`.
+#' @param overlays `colData` annotations to draw as overlay tracks beside the
+#'   heatmap when `what = "samples"`. `TRUE` shows every `colData` column, a
+#'   character vector names specific ones, and `NULL` (the default) shows none.
+#'   Ignored when `what = "features"`.
+#' @param cluster Logical; when `TRUE` (the default) the heatmap is
+#'   hierarchically clustered on both axes so correlated groups sit together.
+#' @param ntop Optional integer selecting the `ntop` most variable features
+#'   before correlating. Useful to bound a `"features"` correlation. `NULL`
+#'   (the default) uses every feature.
+#' @param ... Additional CanvasXpress configuration passed to
+#'   [canvasXpress::canvasXpress()].
+#'
+#' @return A `canvasXpress` htmlwidget.
+#'
+#' @examples
+#' se <- makeDemoSE()
+#' cxcorrelation(se, overlays = "Cohort")
+#'
+#' @importFrom SummarizedExperiment assay colData
+#' @export
+cxcorrelation <- function(object, assay = 1L,
+    what = c("samples", "features"), method = "pearson",
+    overlays = NULL, cluster = TRUE, ntop = NULL, ...) {
+    what <- match.arg(what)
+    if (!methods::is(object, "SummarizedExperiment")) {
+        stop("'object' must be a SummarizedExperiment.", call. = FALSE)
+    }
+    mat <- as.matrix(SummarizedExperiment::assay(object, assay))
+    if (is.null(rownames(mat))) {
+        rownames(mat) <- paste0("V", seq_len(nrow(mat)))
+    }
+    if (is.null(colnames(mat))) {
+        colnames(mat) <- paste0("S", seq_len(ncol(mat)))
+    }
+
+    if (!is.null(ntop) && is.finite(ntop) && ntop < nrow(mat)) {
+        vars_by_row <- apply(mat, 1L, stats::var)
+        keep <- order(vars_by_row, decreasing = TRUE)[seq_len(ntop)]
+        mat <- mat[keep, , drop = FALSE]
+    }
+
+    # cor() correlates columns, so samples correlate directly and features
+    # correlate on the transpose.
+    cormat <- if (what == "samples") {
+        stats::cor(mat, method = method)
+    } else {
+        stats::cor(t(mat), method = method)
+    }
+
+    extra <- list(
+        graphType = "Heatmap",
+        title = sprintf("%s correlation (%s)", what, method))
+    if (isTRUE(cluster)) {
+        extra$samplesClustered <- TRUE
+        extra$variablesClustered <- TRUE
+    }
+
+    # Carry colData onto both axes of a sample-correlation heatmap so the
+    # requested annotations can draw as overlay tracks on either side.
+    annot_args <- list()
+    if (what == "samples") {
+        cd <- as.data.frame(SummarizedExperiment::colData(object))
+        rownames(cd) <- colnames(mat)
+        if (ncol(cd)) {
+            annot_args$smpAnnot <- cd
+            annot_args$varAnnot <- cd
+        }
+        picked <- if (isTRUE(overlays)) {
+            colnames(cd)
+        } else if (is.character(overlays)) {
+            intersect(overlays, colnames(cd))
+        } else {
+            NULL
+        }
+        if (length(picked)) {
+            extra$smpOverlays <- as.list(picked)
+            extra$varOverlays <- as.list(picked)
+        }
+    }
+
+    do.call(canvasXpress::canvasXpress, c(
+        list(data = cormat),
+        annot_args,
+        extra,
         list(...)))
 }
 

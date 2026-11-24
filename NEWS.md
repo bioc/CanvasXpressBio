@@ -1,3 +1,18 @@
+# CanvasXpressBio 0.99.7
+
+* New `cxpca()` draws a principal-component scatter of the samples (PC1 vs PC2
+  by default) with the percentage of variance in the axis titles, colouring and
+  shaping the points by `colData` and optionally restricting to the `ntop` most
+  variable features.
+* New `cxcorrelation()` draws a sample- or feature-correlation heatmap
+  (Pearson/Spearman/Kendall) with hierarchical clustering and `colData` overlay
+  tracks, the usual quality-control view of a genomics matrix.
+* `cxplot()` gains `log` (plot \eqn{\log_2(x + 1)}) and `scale`
+  (`"row"`/`"column"` z-score) so an expression heatmap can be standardised,
+  the common way to make genes comparable regardless of magnitude.
+* Vignette: added a quality-control section showing `cxpca()` and
+  `cxcorrelation()` on the demonstration object, and a row-scaled heatmap.
+
 # CanvasXpressBio 0.99.6
 
 * Seed the demonstration-data helpers with `withr::with_seed()` instead of

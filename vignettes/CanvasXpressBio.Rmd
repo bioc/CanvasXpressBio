@@ -24,9 +24,10 @@ Bioconductor object directly and render it as a reproducible CanvasXpress
 widget, carrying the object's annotations along for interactive grouping,
 coloring and sorting.
 
-This vignette builds **one** `SummarizedExperiment` and shows it four ways —
-heatmap, volcano plot, Kaplan-Meier curve and paired boxplot — so the same
-samples and genes run through every figure.
+This vignette builds **one** `SummarizedExperiment` and shows it several ways —
+a heatmap, a quality-control pass (principal-component scatter and a
+correlation heatmap), a volcano plot, a Kaplan-Meier curve and a paired
+boxplot — so the same samples and genes run through every figure.
 
 ```{r load, message = FALSE}
 library(CanvasXpressBio)
@@ -110,8 +111,43 @@ metadata on hover, a user simply adds more columns to the object's `colData` or
 toolbar's reset button — and a double-click anywhere on the plot — restores the
 original view, the same role Plotly's *home* control plays.
 
+**Standardising the rows.** Expression heatmaps are usually z-scored per gene
+so that genes are comparable regardless of their overall magnitude. `cxplot()`
+does this with `scale = "row"` (and `log = TRUE` applies a
+\eqn{\log_2(x + 1)} transform first for count data):
+
+```{r heatmap-scaled}
+cxplot(se, title = "Marker-gene expression (row z-score)",
+    overlays = "Cohort", var_overlays = "Direction",
+    cluster = TRUE, scale = "row")
+```
+
 Because `SingleCellExperiment` and `DESeqDataSet` both extend
 `SummarizedExperiment`, the same method renders them without any extra code.
+
+# Quality control: PCA and sample correlation
+
+Before interpreting individual genes it is worth checking how the samples relate
+to one another overall. `cxpca()` runs a principal-component analysis on the
+assay and draws the samples as a scatter of two components, with the percentage
+of variance each explains in the axis titles. Colouring by cohort and shaping by
+time point shows whether the samples separate the way the design expects.
+`ntop` restricts the analysis to the most variable genes.
+
+```{r pca}
+cxpca(se, color = "Cohort", shape = "Condition", ntop = 12,
+    title = "Sample PCA")
+```
+
+`cxcorrelation()` draws the complementary view: a heatmap of the pairwise
+correlation between samples, clustered so that similar samples sit together.
+`overlays` carries the `colData` onto the map as annotation tracks, so a sample
+that correlates with the wrong cohort is easy to spot.
+
+```{r correlation}
+cxcorrelation(se, overlays = c("Cohort", "Condition"),
+    title = "Sample-sample correlation")
+```
 
 # A volcano plot from differential-expression results
 

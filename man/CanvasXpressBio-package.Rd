@@ -12,8 +12,10 @@ Bioconductor classes. [cxplot()] renders a
 such as `SingleCellExperiment` or `DESeqDataSet`) as an interactive
 CanvasXpress heatmap carrying its row and column annotations; [cxvolcano()]
 draws a volcano plot from a differential-expression table; [cxsurvival()]
-draws a Kaplan-Meier curve from `colData`; and [cxboxplot()] draws a paired
-boxplot of one feature with per-subject connections.
+draws a Kaplan-Meier curve from `colData`; [cxboxplot()] draws a paired
+boxplot of one feature with per-subject connections; [cxpca()] draws a
+principal-component scatter of the samples; and [cxcorrelation()] draws a
+sample- or feature-correlation heatmap.
 }
 \seealso{
 Useful links:
